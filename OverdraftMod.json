@@ -1,0 +1,12 @@
+{
+  "id": "OverdraftMod",
+  "name": "Gold Overdraft",
+  "author": "tracycai",
+  "description": "Buy shop items down to -100 gold. Repay with future gold or die at the end of the act.",
+  "version": "0.1.0",
+  "has_pck": false,
+  "has_dll": true,
+  "dependencies": [],
+  "affects_gameplay": true,
+  "min_game_version": "0.111.0"
+}
