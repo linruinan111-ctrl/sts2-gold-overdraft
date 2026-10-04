@@ -22,39 +22,53 @@ public static class ModEntry
 {
     internal const int CreditLimit = 100;
     private static RunState? _currentRun;
+    private static readonly MethodInfo GuaranteeKillAllPlayersMethod =
+        AccessTools.Method(typeof(RunManager), "GuaranteeKillAllPlayers")!;
 
     public static void Initialize()
     {
         RunManager.Instance.RunStarted += run => _currentRun = run;
         new Harmony("tracy.sts2.overdraft").PatchAll(typeof(ModEntry).Assembly);
-        Log.Info("OverdraftMod: shop balance floor -100, repay by earning gold, collect at act end.");
+        Log.Info("OverdraftMod: multiplayer shop balance floor -100, repay by earning gold, collect at act end.");
     }
 
     internal static bool IsEligible(Player player) =>
-        ReferenceEquals(player.RunState, _currentRun) &&
-        _currentRun?.Players.Count == 1 &&
-        RunManager.Instance.NetService?.Type == NetGameType.Singleplayer &&
+        IsInCurrentRun(player) &&
+        IsSupportedNetMode(RunManager.Instance.NetService?.Type) &&
         player.RunState.CurrentRoom is MerchantRoom;
+
+    internal static bool IsInCurrentRun(Player player) =>
+        ReferenceEquals(player.RunState, _currentRun);
+
+    internal static bool IsSupportedNetMode(NetGameType? type) =>
+        type is NetGameType.Singleplayer or NetGameType.Host or NetGameType.Client;
+
+    internal static bool IsHostAuthority =>
+        RunManager.Instance.NetService?.Type is NetGameType.Singleplayer or NetGameType.Host;
 
     internal static bool CanAfford(Player player, int cost) =>
         cost >= 0 && (long)player.Gold - cost >= -CreditLimit;
 
     internal static Task? CollectOverdueBalance()
     {
-        if (_currentRun?.Players.Count != 1 ||
-            RunManager.Instance.NetService?.Type != NetGameType.Singleplayer)
+        if (_currentRun == null || !IsHostAuthority)
         {
             return null;
         }
 
-        var player = _currentRun.Players[0];
-        if (player.Gold >= 0 || player.Creature.IsDead)
+        var debtors = _currentRun.Players.Where(player => player.Gold < 0 && !player.Creature.IsDead).ToArray();
+        if (debtors.Length == 0)
         {
             return null;
         }
 
-        Log.Info($"OverdraftMod: act ended with {player.Gold} gold; collecting debt.");
-        return CreatureCmd.Kill(player.Creature, force: true);
+        Log.Info($"OverdraftMod: act ended with outstanding debt for {debtors.Length} player(s); collecting debt.");
+        if (_currentRun.Players.Count > 1)
+        {
+            return (Task)GuaranteeKillAllPlayersMethod.Invoke(RunManager.Instance, null)!;
+        }
+
+        return CreatureCmd.Kill(debtors[0].Creature, force: true);
     }
 }
 
@@ -86,7 +100,9 @@ internal static class ShopPaymentPatch
         var isShopPayment = goldLossType == GoldLossType.Spent && ModEntry.IsEligible(player);
         if (!isShopPayment)
         {
-            if (player.Gold >= 0)
+            if (!ModEntry.IsInCurrentRun(player) ||
+                !ModEntry.IsSupportedNetMode(RunManager.Instance.NetService?.Type) ||
+                player.Gold >= 0)
             {
                 return true;
             }
@@ -107,14 +123,12 @@ internal static class ShopPaymentPatch
             return false;
         }
 
-        SfxCmd.Play(PlayerCmd.goldSmallSfx);
         var history = player.RunState.CurrentMapPointHistoryEntry?.GetEntry(player.NetId);
         if (history != null)
         {
             history.GoldSpent += (int)amount;
         }
-        player.Gold = (int)balanceAfterPurchase;
-        __result = Task.CompletedTask;
+        __result = PlayerCmd.SetGold(balanceAfterPurchase, player);
         return false;
     }
 }
@@ -155,7 +169,7 @@ internal static class GoldTooltipPatch
     private static bool Prefix(NTopBarGold __instance)
     {
         var loc = LocManager.Instance;
-        if (loc == null || RunManager.Instance.NetService?.Type != NetGameType.Singleplayer)
+        if (loc == null || !ModEntry.IsSupportedNetMode(RunManager.Instance.NetService?.Type))
         {
             return true;
         }
@@ -165,8 +179,8 @@ internal static class GoldTooltipPatch
         {
             ["OVERDRAFT_MOD.title"] = chinese ? "金币透支" : "Gold Overdraft",
             ["OVERDRAFT_MOD.description"] = chinese
-                ? "商店购买可将金币降至 -100。获得金币会自动偿还欠款；本幕结束时金币仍为负数，你将死亡。"
-                : "Shop purchases may lower gold to -100. Gold earned repays the debt. If gold is still negative at the end of the act, you die."
+                ? "商店购买可将自己的金币降至 -100。获得金币会自动偿还欠款；本幕结束时只要任意玩家仍为负数，全队都会死亡。"
+                : "Shop purchases may lower your gold to -100. Gold earned repays your debt. If any player is still negative at the end of the act, the whole party dies."
         });
 
         var tip = new HoverTip(
