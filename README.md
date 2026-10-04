@@ -12,6 +12,12 @@
 
 需要 Steam 默认位置安装的游戏和 .NET 9 SDK。在此文件夹运行 `sh install.sh`，然后重启游戏。不需要 Godot 编辑器。
 
+## GitHub Actions
+
+仓库中的 `Validate Gold Overdraft` 工作流会在 `main` push、针对 `main` 的 PR，以及手动运行时检查项目。它会使用 .NET 9 还原真实的 `OverdraftMod.csproj`，验证 `OverdraftMod.json`、安装脚本和游戏程序集引用是否完整。
+
+GitHub 托管 runner 没有你的 Steam 游戏，因此工作流不会把 `sts2.dll` 等游戏程序集上传到公开仓库，也不会在云端伪造游戏编译。完整构建仍使用本机命令 `sh install.sh`；Actions 的绿色结果表示项目输入和自动化检查通过，不代表已经在游戏中完成联机测试。
+
 ## 验证
 
 1. 单人或多人商店购买一件原本买不起、但购买后余额不低于 -100 的商品，确认对应玩家金币显示负数。
@@ -29,3 +35,5 @@ Spot a relic or card you want but don't have enough gold? **Gold Overdraft lets 
 In single-player and multiplayer shops, each player's purchases may lower that player's balance to **-100 gold**, but no further. Future gold raises that player's balance immediately. If any player is still negative when the party leaves the act, the whole party dies; the same check applies before the final victory. The credit limit and deadline preserve the tradeoffs and risk of each purchase. No loan button or separate debt counter is needed: the gold balance shows the debt.
 
 This code-only mod currently targets Slay the Spire 2 `v0.111.0`. Build against the installed game's DLLs with the .NET 9 SDK, then run `sh install.sh` on macOS and restart the game. No Godot editor is needed.
+
+The `Validate Gold Overdraft` GitHub Actions workflow checks the real project restore, manifest, installer, and game-assembly reference contract. Because GitHub-hosted runners do not contain the Steam game assemblies, the final game build remains a local `sh install.sh` step.

@@ -1,0 +1,49 @@
+name: Validate Gold Overdraft
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate project and package inputs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore the actual Mod project
+        run: dotnet restore OverdraftMod.csproj
+
+      - name: Validate Mod manifest
+        shell: bash
+        run: |
+          jq empty OverdraftMod.json
+          test "$(jq -r '.id' OverdraftMod.json)" = "OverdraftMod"
+          test "$(jq -r '.has_dll' OverdraftMod.json)" = "true"
+          test "$(jq -r '.min_game_version' OverdraftMod.json)" = "0.111.0"
+
+      - name: Validate local build contract
+        shell: bash
+        run: |
+          grep -Fq '<TargetFramework>net9.0</TargetFramework>' OverdraftMod.csproj
+          grep -Fq 'HintPath>$(Sts2DataDir)/sts2.dll' OverdraftMod.csproj
+          grep -Fq 'HintPath>$(Sts2DataDir)/0Harmony.dll' OverdraftMod.csproj
+          grep -Fq 'HintPath>$(Sts2DataDir)/GodotSharp.dll' OverdraftMod.csproj
+          grep -Fq 'build "$project_dir/OverdraftMod.csproj"' install.sh
+          grep -Fq 'Sts2DataDir="$game_data"' install.sh
+
+      - name: Check installer shell syntax
+        run: bash -n install.sh
